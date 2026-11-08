@@ -7,9 +7,7 @@ import android.os.Build
 import android.os.IBinder
 import android.view.*
 import android.view.animation.OvershootInterpolator
-import android.widget.FrameLayout
 import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.NotificationCompat
 import com.yourname.dynamicisland.MainActivity
@@ -21,12 +19,13 @@ class IslandOverlayService : Service() {
     private var islandView: View? = null
     private var params: WindowManager.LayoutParams? = null
 
-    // ویوهای داخل جزیره
     private var titleText: TextView? = null
     private var artistText: TextView? = null
     private var coverImage: ImageView? = null
 
     private var isExpanded = false
+    private var systemEventReceiver: SystemEventReceiver? = null
+    private var currentEvent: SystemEventReceiver.EventType? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -35,19 +34,23 @@ class IslandOverlayService : Service() {
         createNotificationChannel()
         startForeground(1, createNotification())
         showIsland()
+
+        // گوش دادن به رویدادهای سیستم
+        systemEventReceiver = SystemEventReceiver { event ->
+            showSystemEvent(event)
+        }
+        registerReceiver(systemEventReceiver, SystemEventReceiver.getIntentFilter())
     }
 
     private fun showIsland() {
         windowManager = getSystemService(WINDOW_SERVICE) as WindowManager
 
-        // ساخت ویوی جزیره
         islandView = LayoutInflater.from(this).inflate(R.layout.island_overlay, null)
 
         titleText = islandView?.findViewById(R.id.tvTitle)
         artistText = islandView?.findViewById(R.id.tvArtist)
         coverImage = islandView?.findViewById(R.id.ivCover)
 
-        // کلیک برای باز و بسته شدن
         islandView?.setOnClickListener {
             toggleExpand()
         }
@@ -70,7 +73,7 @@ class IslandOverlayService : Service() {
 
         windowManager?.addView(islandView, params)
 
-        // انیمیشن ورود اولیه
+        // انیمیشن ورود
         islandView?.scaleX = 0.3f
         islandView?.scaleY = 0.3f
         islandView?.alpha = 0f
@@ -85,40 +88,109 @@ class IslandOverlayService : Service() {
 
     private fun toggleExpand() {
         if (isExpanded) {
-            // جمع شدن
-            islandView?.animate()
-                ?.scaleX(1f)
-                ?.scaleY(1f)
-                ?.setDuration(280)
-                ?.setInterpolator(OvershootInterpolator(0.9f))
-                ?.withEndAction {
-                    params?.width = 160
-                    params?.height = 48
-                    windowManager?.updateViewLayout(islandView, params)
-                }
-                ?.start()
+            collapseIsland()
         } else {
-            // باز شدن
-            params?.width = 320
-            params?.height = 90
-            windowManager?.updateViewLayout(islandView, params)
-
-            islandView?.scaleX = 0.85f
-            islandView?.scaleY = 0.85f
-            islandView?.animate()
-                ?.scaleX(1f)
-                ?.scaleY(1f)
-                ?.setDuration(320)
-                ?.setInterpolator(OvershootInterpolator(1.2f))
-                ?.start()
+            expandIsland()
         }
-        isExpanded = !isExpanded
     }
 
-    // این متد بعداً از NotificationListener صدا زده می‌شه
+    private fun expandIsland() {
+        params?.width = 320
+        params?.height = 90
+        windowManager?.updateViewLayout(islandView, params)
+
+        islandView?.scaleX = 0.85f
+        islandView?.scaleY = 0.85f
+        islandView?.animate()
+            ?.scaleX(1f)
+            ?.scaleY(1f)
+            ?.setDuration(320)
+            ?.setInterpolator(OvershootInterpolator(1.2f))
+            ?.start()
+
+        isExpanded = true
+    }
+
+    private fun collapseIsland() {
+        islandView?.animate()
+            ?.scaleX(0.9f)
+            ?.scaleY(0.9f)
+            ?.setDuration(250)
+            ?.withEndAction {
+                params?.width = 160
+                params?.height = 48
+                windowManager?.updateViewLayout(islandView, params)
+                isExpanded = false
+            }
+            ?.start()
+    }
+
+    private fun showSystemEvent(event: SystemEventReceiver.EventType) {
+        currentEvent = event
+
+        if (!isExpanded) {
+            expandIsland()
+        }
+
+        when (event) {
+            SystemEventReceiver.EventType.CHARGING -> {
+                titleText?.text = "در حال شارژ"
+                artistText?.text = "شارژر متصل شد"
+                coverImage?.setImageResource(R.drawable.ic_charging)
+            }
+            SystemEventReceiver.EventType.FULL_BATTERY -> {
+                titleText?.text = "شارژ کامل"
+                artistText?.text = "۱۰۰٪"
+                coverImage?.setImageResource(R.drawable.ic_battery_full)
+            }
+            SystemEventReceiver.EventType.LOW_BATTERY -> {
+                titleText?.text = "باتری ضعیف"
+                artistText?.text = "شارژ کنید"
+                coverImage?.setImageResource(R.drawable.ic_battery_low)
+            }
+            SystemEventReceiver.EventType.SILENT_ON -> {
+                titleText?.text = "حالت بی‌صدا"
+                artistText?.text = "اعلان‌ها خاموش"
+                coverImage?.setImageResource(R.drawable.ic_silent)
+            }
+            SystemEventReceiver.EventType.SILENT_OFF -> {
+                titleText?.text = "صدا روشن"
+                artistText?.text = "اعلان‌ها فعال"
+                coverImage?.setImageResource(R.drawable.ic_sound)
+            }
+            SystemEventReceiver.EventType.BATTERY_SAVER_ON -> {
+                titleText?.text = "صرفه‌جویی باتری"
+                artistText?.text = "فعال شد"
+                coverImage?.setImageResource(R.drawable.ic_battery_saver)
+            }
+            SystemEventReceiver.EventType.BATTERY_SAVER_OFF -> {
+                titleText?.text = "صرفه‌جویی باتری"
+                artistText?.text = "خاموش شد"
+                coverImage?.setImageResource(R.drawable.ic_battery)
+            }
+        }
+
+        // بعد از ۳ ثانیه خودش جمع بشه
+        islandView?.postDelayed({
+            if (isExpanded && currentEvent == event) {
+                collapseIsland()
+            }
+        }, 3000)
+    }
+
     fun updateMusicInfo(title: String, artist: String) {
         titleText?.text = title
         artistText?.text = artist
+        coverImage?.setImageResource(R.drawable.ic_music)
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (intent?.action == "UPDATE_MUSIC") {
+            val title = intent.getStringExtra("title") ?: "در حال پخش"
+            val artist = intent.getStringExtra("artist") ?: ""
+            updateMusicInfo(title, artist)
+        }
+        return START_STICKY
     }
 
     private fun createNotificationChannel() {
@@ -146,16 +218,10 @@ class IslandOverlayService : Service() {
             .setOngoing(true)
             .build()
     }
-override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-    if (intent?.action == "UPDATE_MUSIC") {
-        val title = intent.getStringExtra("title") ?: "در حال پخش"
-        val artist = intent.getStringExtra("artist") ?: ""
-        updateMusicInfo(title, artist)
-    }
-    return START_STICKY
-}
+
     override fun onDestroy() {
         super.onDestroy()
+        systemEventReceiver?.let { unregisterReceiver(it) }
         islandView?.let { windowManager?.removeView(it) }
     }
 }
