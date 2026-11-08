@@ -4,7 +4,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.media.MediaMetadata
-import android.media.session.MediaController
 import android.media.session.MediaSessionManager
 import android.service.notification.NotificationListenerService
 import android.service.notification.StatusBarNotification
@@ -13,12 +12,29 @@ class NotificationListener : NotificationListenerService() {
 
     override fun onNotificationPosted(sbn: StatusBarNotification?) {
         super.onNotificationPosted(sbn)
-        checkMediaSession()
-    }
+        sbn ?: return
 
-    override fun onNotificationRemoved(sbn: StatusBarNotification?) {
-        super.onNotificationRemoved(sbn)
+        // موسیقی
         checkMediaSession()
+
+        // پیام‌ها
+        val packageName = sbn.packageName
+        if (packageName.contains("whatsapp") ||
+            packageName.contains("telegram") ||
+            packageName.contains("messaging") ||
+            packageName.contains("sms")) {
+
+            val extras = sbn.notification.extras
+            val title = extras.getString("android.title") ?: "پیام جدید"
+            val text = extras.getCharSequence("android.text")?.toString() ?: ""
+
+            val intent = Intent(this, IslandOverlayService::class.java).apply {
+                action = "SHOW_MESSAGE"
+                putExtra("sender", title)
+                putExtra("message", text)
+            }
+            startService(intent)
+        }
     }
 
     private fun checkMediaSession() {
@@ -29,13 +45,10 @@ class NotificationListener : NotificationListenerService() {
             )
 
             if (controllers.isNotEmpty()) {
-                val controller = controllers[0]
-                val metadata = controller.metadata
-
+                val metadata = controllers[0].metadata
                 val title = metadata?.getString(MediaMetadata.METADATA_KEY_TITLE) ?: "در حال پخش"
                 val artist = metadata?.getString(MediaMetadata.METADATA_KEY_ARTIST) ?: ""
 
-                // ارسال اطلاعات به سرویس Overlay
                 val intent = Intent(this, IslandOverlayService::class.java).apply {
                     action = "UPDATE_MUSIC"
                     putExtra("title", title)
