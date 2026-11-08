@@ -146,7 +146,14 @@ class IslandOverlayService : Service() {
             .setOngoing(true)
             .build()
     }
-
+override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    if (intent?.action == "UPDATE_MUSIC") {
+        val title = intent.getStringExtra("title") ?: "در حال پخش"
+        val artist = intent.getStringExtra("artist") ?: ""
+        updateMusicInfo(title, artist)
+    }
+    return START_STICKY
+}
     override fun onDestroy() {
         super.onDestroy()
         islandView?.let { windowManager?.removeView(it) }
